@@ -6,7 +6,7 @@ theme = 'm10c'
 [params]
 author = 'Ignytis'
 avatar = 'avatar_ignytis.jpg'
-description = 'Software Engineer from Estonia'
+description = 'Ignytis. A Software Engineer from Estonia'
 
 [[params.social]]
 icon = "github"
