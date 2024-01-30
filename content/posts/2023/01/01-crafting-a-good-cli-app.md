@@ -1,7 +1,7 @@
 ---
 title: "Crafting a good command-line application"
 date: 2023-01-06T09:45:02+02:00
-tags: ["cli", "best-pratcices"]
+tags: ["cli", "best-pratcices", "software-development"]
 draft: false
 ---
 # Intro
