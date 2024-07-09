@@ -1,6 +1,6 @@
 ---
 title: "Rewriting the Git history: user name and e-mail"
-date: 2024-07-09T22:38:03+02:00
+date: 2024-07-09T21:38:03+02:00
 description: This article describes how to rewrite the user name and email in Git history
 tags: ["git", "bash", "software-development"]
 draft: false
