@@ -9,7 +9,7 @@ draft: false
 # Considerations
 
 - Ubuntu Server 24.04.2 (x64) is used as a guest system
-- Host system: Linux. At the moment of writing the article I used Fedora Workstation 42
+- Host system: Linux (x64). At the moment of writing the article I used Fedora Workstation 42
 - At some point we will need Docker to compile a binary to handle one issue
 
 # The roadmap
@@ -170,6 +170,8 @@ The outcome will be:
 
 ## Now let's make initrd
 
+Create a new directory (we will refer it as __Initrd source directory__).
+Then create an `init` file with the following contents:
 ```bash
 #!/bin/sh
 
@@ -190,14 +192,143 @@ mkdir /mnt
 mount /dev/vda2 /mnt
 exec switch_root /mnt /sbin/init
 ```
+This file will be loaded on system boot.
+
+Now create a directory with the structure of RAM filesystem; replace the !busybox_src! with path to __Busybox source directory__:
+```bash
+# Create a rootfs directory with contents
+mkdir -pv rootfs/{bin,sbin,aetc,proc,sys,usr/{bin,sbin},dev}
+# Copy the binaries into rootfs directory
+cp -av !busybox_src!/_install/* rootfs/
+# Copy the init file into rootfs directory and make it executable
+cp init rootfs/init
+chmod +x rootfs/init
+```
+Finally, create a `rootfs.cpio.gz` file with the contents of rootfs:
+```bash
+# Navigate to rootfs directory
+cd rootfs
+find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../rootfs.cpio.gz
+```
 
 # Setting up the virtual machine
 
+Let's create yet another new directory which is __Guest OS directory__.
+It will contain files which are necessary for installation of Ubuntu Server into QEMU virtual machine.
+Go to this directory and download an ISO image of Ubuntu Server:
+```bash
+wget https://releases.ubuntu.com/24.04.2/ubuntu-24.04.2-live-server-amd64.iso
+```
+
+Now let's create a virtual hard drive where we will install Ubuntu to:
+```
+qemu-img create disk.qcow2 10G -f qcow2
+```
+This will create a `disk.qcow2` file which will be a 10 gigabyte disk in [qcow format](https://en.wikipedia.org/wiki/Qcow).
+
+Finally, start a virtual machine with ISO image + virtual disk mounted. `!guest_dir!` should be replaced with path to __Guest OS directory__.
+```bash
+qemu-system-x86_64 \
+    -enable-kvm \
+    -m 2048 \
+    -cpu host \
+    -smp 2 \
+    -drive file=!guest_dir!/disk.qcow2,format=qcow2,if=virtio \
+    -cdrom !guest_dir!/ubuntu-24.04.2-live-server-amd64.iso\
+    -net nic \
+    -net user \
+    -vga std \
+    -boot d
+```
+This command will open a window with virtual machine which uses 2 CPU cores (`-smp 2`) and 2GB RAM (`-m 2048`). Proceed with installation of Ubuntu.
+
+__NB!__ When configuring disk partitions, do __NOT__ enable the disk encryption (LUKS; it might be enabled by default), because you will not be able to mount it later.
+
+When installer requests to reboot the system, you can just close the window with VM.
+
+To verify the installation, you can run the previous command again, but with `-cdrom` and `-boot` options removed in order to skip the ISO disk part:
+```bash
+qemu-system-x86_64 \
+    -enable-kvm \
+    -m 2048 \
+    -cpu host \
+    -smp 2 \
+    -drive file=!guest_dir!/disk.qcow2,format=qcow2,if=virtio \
+    -net nic \
+    -net user \
+    -vga std
+```
+Now the system must boot from virtual disk.
+
+To verify if virtual disk had been created correctly, check the list of disks (`df -h`) after login to the guest system. There must be `/dev/vda2` disk mounted to `/`.
+If there are paths like `/dev/mapper/..` then you most likely missed the previous __"NB"__ block and created the encrypted disk.
+
+# Booting the compiled kernel
+
+Now let's adjust the previous command to boot your kernel. Please don't forget to replace:
+- `!guest_dir!` &gt; __Guest OS directory__
+- `!initrd_dir!` &gt; __Initrd source directory__
+- `!kernel_dir!` &gt; __Kernel source directory__
+
+```bash
+qemu-system-x86_64 \
+    -enable-kvm \
+    -m 2048 \
+    -cpu host \
+    -smp 2 \
+    -drive file=!guest_dir!/disk2.qcow2,format=qcow2,if=virtio \
+    -append "root=/dev/vda2 console=ttyS0 earlyprintk=vga debug initcall_debug nokaslr net.ifnames=0 biosdevname=0" \
+    -initrd !initrd_dir!/rootfs.cpio.gz \
+    -kernel !kernel_dir!/arch/x86_64/boot/bzImage \
+    -vga std
+```
+If everything went well, it should start as usual. Now, if you type:
+```bash
+uname -a
+```
+it should display the version of compiled kernel. If you added some your custom input, as suggested in beginning of article, it should be printed too.
+
 # Debugging the kernel
+
+The last step is to enable debugging in the running machine:
+```bash
+qemu-system-x86_64 \
+    -enable-kvm \
+    -m 2048 \
+    -cpu host \
+    -smp 2 \
+    -drive file=!guest_dir!/disk2.qcow2,format=qcow2,if=virtio \
+    -append "root=/dev/vda2 console=ttyS0 earlyprintk=vga debug initcall_debug nokaslr net.ifnames=0 biosdevname=0" \
+    -initrd !initrd_dir!/rootfs.cpio.gz \
+    -kernel !kernel_dir!/arch/x86_64/boot/bzImage \
+    -vga std \
+    -s -S
+```
+`-s -S` flags start a GDB server at port `1234` and halt the machine on startup. After running command, you will see a message:
+
+> Guest has not initialized the display (yet)
+
+So execution had stopped even before display was initialized. Now in __Kernel source directory__ run this:
+```bash
+gdb -tui vmlinux
+```
+Inside GDB session, let's connect to GDB server which we had started on port `1234` and add a hardware-assisted breakpoint on `start_kernel` function:
+```bash
+target remote :1234
+hb start_kernel
+```
+
+After setting a breakpoint, you can resume the execution by sending `c` command to GDB. Some text will be printed in QEMU window and GDB will freeze in beginning
+of `start_kernel` function. Send a `n` command a couple of times to execute few lines of the code. Your GDB and QEMU windows will look like this:
+
+![QEMU and GDB windows](images/linux_qemu_gdb.jpg "QEMU and GDB windows")
+
+If you have approximately the same result, then congratulations, you can debug the kernel now!
 
 # Kudos
 - https://www.youtube.com/@johannes4gnu_linux96 for this [video about compilation of Kernel, Busybox and building the rootfs](https://www.youtube.com/watch?v=LyWlpuntdU4)
 - https://www.youtube.com/@hexdump1337 for [one more video about kernel, busybox and qemu](https://www.youtube.com/watch?v=4PdMZd0Bt7c)
 - https://www.youtube.com/@ghostinthehive2027 for [video about debugging the kernel in GDB](https://www.youtube.com/watch?v=2VcA5Wj7IvU)
 - https://gist.github.com/chrisdone for providing [examples of initrd scripts](https://gist.github.com/chrisdone/02e165a0004be33734ac2334f215380e)
+- https://lukaszgemborowski.github.io for [article with instructions about compilation of initrd](https://lukaszgemborowski.github.io/articles/minimalistic-linux-system-on-qemu-arm.html)
 - [ChatGPT](https://chatgpt.com/) for solving my networking issues inside qemu VM
