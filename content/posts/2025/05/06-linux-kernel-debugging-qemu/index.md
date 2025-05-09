@@ -2,7 +2,7 @@
 title: "QEMU + Ubuntu Server + GDB. Debugging the linux server using a virtual machine"
 date: 2025-05-08T19:11:23
 description: This guide demonstrates how to compile and debug the Linux Kernel using QEMU
-tags: ["debugging", "reverse-engineering", "linux", "kernel", "virtualization", "qemu"]
+tags: ["debugging", "reverse-engineering", "linux", "kernel", "virtualization", "qemu", "gdb", "development", "kernel_development"]
 draft: false
 ---
 
@@ -25,23 +25,6 @@ draft: false
 
 # Compilation of Linux Kernel
 
-## How to obtain the code
-
-The code can be pulled from [Github mirror](https://github.com/torvalds/linux)
-
-_If you wish to pull the whole git history, skip the --depth=1 flag._
-
-```bash
-git clone --depth=1 https://github.com/torvalds/linux.git # or
-git clone --depth=1 git@github.com:torvalds/linux.git
-```
-...or from [kernel.org](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/), if you prefer the original source:
-```bash
-git clone --depth=1 git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
-```
-
-It will take a while, because Kernel has quite a huge history. This would be the __Kernel source directory__.
-
 ## Prerequisites
 
 You will need:
@@ -52,6 +35,21 @@ You will need:
   In Fedora in can be installed via `dnf install ncurses-devel`.
   _If you prefer to edit the config file manually instead of uring the menu, this step might be skipped_.
 - GNU `make` utility
+
+## How to obtain the code
+
+The code can be pulled from [Github mirror](https://github.com/torvalds/linux)
+
+```bash
+git clone --depth=1 https://github.com/torvalds/linux.git # or
+git clone --depth=1 git@github.com:torvalds/linux.git
+```
+...or from [kernel.org](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/), if you prefer the original source:
+```bash
+git clone --depth=1 git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
+```
+
+You can omit the `depth=1` flag if you would like to pull the whole history, but it will take longer time. This would be the __Kernel source directory__.
 
 ## Configuration
 
@@ -231,7 +229,6 @@ rootfs
 └── usr
 
 # non-exhaustive list of files in bin directory
-```bash
 tree rootfs | head -n 7
 rootfs
 ├── bin
@@ -286,9 +283,7 @@ It also boots from ISO image (`-boot d` flag). Proceed with installation of Ubun
 __NB!__ When configuring disk partitions, do __NOT__ enable the disk encryption (the `Set up this disk as LVM group` option), because you will not be able to mount it later.
 Also this tutorial implies using default settings for disk partitioning, so I would recommend to use the default settings apart from notice about encryption above.
 
-When installer requests to reboot the system, you can just close the window with VM.
-
-To verify the installation, you can run the previous command again, but with `-cdrom` and `-boot` options removed in order to skip the ISO disk part:
+When installer requests to reboot the system, you can just close the window. To verify the installation, run the previous command without `-cdrom` and `-boot` flags:
 ```bash
 qemu-system-x86_64 \
     -enable-kvm \
