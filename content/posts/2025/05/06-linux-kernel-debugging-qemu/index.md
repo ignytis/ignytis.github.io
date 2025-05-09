@@ -1,6 +1,6 @@
 ---
 title: "QEMU + Ubuntu Server + GDB. Debugging the linux server using a virtual machine"
-date: 2025-05-05T22:11:23
+date: 2025-05-08T19:11:23
 description: This guide demonstrates how to compile and debug the Linux Kernel using QEMU
 tags: ["debugging", "reverse-engineering", "linux", "kernel", "virtualization", "qemu"]
 draft: false
@@ -28,12 +28,16 @@ draft: false
 ## How to obtain the code
 
 The code can be pulled from [Github mirror](https://github.com/torvalds/linux)
+
+_If you wish to pull the whole git history, skip the --depth=1 flag._
+
 ```bash
-git clone git@github.com:torvalds/linux.git
+git clone --depth=1 https://github.com/torvalds/linux.git # or
+git clone --depth=1 git@github.com:torvalds/linux.git
 ```
 ...or from [kernel.org](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/), if you prefer the original source:
 ```bash
-git clone git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
+git clone --depth=1 git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
 ```
 
 It will take a while, because Kernel has quite a huge history. This would be the __Kernel source directory__.
@@ -42,13 +46,12 @@ It will take a while, because Kernel has quite a huge history. This would be the
 
 You will need:
 - C compiler (`gcc`), of course
-- `flex` and `bison` binaries. They are most likely installed to your system, at least I didn't have to install them
+- `flex` and `bison` binaries. They are most likely installed to your system, at least I didn't have to install them.
+  I accidentally discovered that these applications are needed when tried to compile the kernel in Docker
 - Development version of `ncurses` library to render the configuration menu when running `make menuconfig`.
-  In Fedora in can be installed via `dnf install ncurses-devel`
+  In Fedora in can be installed via `dnf install ncurses-devel`.
+  _If you prefer to edit the config file manually instead of uring the menu, this step might be skipped_.
 - GNU `make` utility
-
-And that's most likely all. The benefit of Linux kernel development is not being dependent on any other system libraries.
-On the opposite, other libraries might depend on Linux Kernel :)
 
 ## Configuration
 
@@ -68,7 +71,7 @@ make menuconfig
 
 This will display a TUI menu where you need to navigate to `Kernel hacking` (it must be the last item).
 Verify if `Kernel debugging` is enabled. Then go to `Compile-time checks and compiler options` &gt; 
-`Debug information (Generate DWARF Version 5 debuginfo)` sub-level and set the `Generate DWARF Version 5 debuginfo` option.
+`Debug information` sub-level and set the `Generate DWARF Version 5 debuginfo` option.
 Now you can save the config and exit from configuration utility.
 
 ### Rename the kernel (optional)
@@ -96,7 +99,7 @@ When the compilation completes, there should be output like
 Kernel: arch/x86/boot/bzImage is ready
 ```
 
-This is your kernel. To avoid any confusion - there is also `arch/x86/boot/bzImage` file, but it is just a symlink to `arch/x86/boot/bzImage`.
+This is your kernel. Just to clarify - there is also `arch/x86_64/boot/bzImage` file, but it is just a symlink to `arch/x86/boot/bzImage`.
 
 
 # Making initrd
@@ -108,9 +111,16 @@ Linux kernel needs an initial filesystem to bootstrap, so let's build it.
 Busybox combines lots of basic utilities in one binary file, that's why it's so useful to bootstrap the Linux system.
 Our goal is to include Busybox into initial ramdisk.
 
+_Note: you can actually borrow the ready-to-use Busybox binary from your host system.
+Use 'which busybox' to check it in your system. If it's not there, you can look it up from your package manager.
+It's important that it was statically linked. If you go this way, you can just copy it to the source directory (see below).
+But I still suggest to pull the project and to run "make install" - after copying binary to the project,
+because it will create important symlinks around Busybox.
+If you decided to go hard way and compile Busybox, ignore this note._
+
 The source code of Busybox could be pulled from its [official repository](https://git.busybox.net/busybox):
 ```bash
-git clone git://busybox.net/busybox.git
+git clone --depth=1 git://busybox.net/busybox.git
 ```
 Let's call the result directory as __Busybox source directory__.
 
@@ -204,6 +214,36 @@ cp -av !busybox_src!/_install/* rootfs/
 cp init rootfs/init
 chmod +x rootfs/init
 ```
+
+Here is expected structure of subdirectories:
+```bash
+# Sub-dirs
+$ tree rootfs -L1
+rootfs
+├── bin
+├── dev
+├── etc
+├── init
+├── linuxrc -> bin/busybox
+├── proc
+├── sbin
+├── sys
+└── usr
+
+# non-exhaustive list of files in bin directory
+```bash
+tree rootfs | head -n 7
+rootfs
+├── bin
+│   ├── arch -> busybox
+│   ├── ash -> busybox
+│   ├── base32 -> busybox
+│   ├── base64 -> busybox
+│   ├── busybox
+```
+
+
+
 Finally, create a `rootfs.cpio.gz` file with the contents of rootfs:
 ```bash
 # Navigate to rootfs directory
@@ -221,10 +261,10 @@ wget https://releases.ubuntu.com/24.04.2/ubuntu-24.04.2-live-server-amd64.iso
 ```
 
 Now let's create a virtual hard drive where we will install Ubuntu to:
+```bash
+qemu-img create ubuntu_hdd.qcow2 10G -f qcow2
 ```
-qemu-img create disk.qcow2 10G -f qcow2
-```
-This will create a `disk.qcow2` file which will be a 10 gigabyte disk in [qcow format](https://en.wikipedia.org/wiki/Qcow).
+This will create a `ubuntu_hdd.qcow2` file which will be a 10 gigabyte disk in [qcow format](https://en.wikipedia.org/wiki/Qcow).
 
 Finally, start a virtual machine with ISO image + virtual disk mounted. `!guest_dir!` should be replaced with path to __Guest OS directory__.
 ```bash
@@ -233,16 +273,18 @@ qemu-system-x86_64 \
     -m 2048 \
     -cpu host \
     -smp 2 \
-    -drive file=!guest_dir!/disk.qcow2,format=qcow2,if=virtio \
-    -cdrom !guest_dir!/ubuntu-24.04.2-live-server-amd64.iso\
+    -drive file=!guest_dir!/ubuntu_hdd.qcow2,format=qcow2,if=virtio \
+    -cdrom !guest_dir!/ubuntu-24.04.2-live-server-amd64.iso \
     -net nic \
     -net user \
     -vga std \
     -boot d
 ```
-This command will open a window with virtual machine which uses 2 CPU cores (`-smp 2`) and 2GB RAM (`-m 2048`). Proceed with installation of Ubuntu.
+This command will open a window with virtual machine which uses 2 CPU cores (`-smp 2`), 2GB RAM (`-m 2048`) and network of the host machine.
+It also boots from ISO image (`-boot d` flag). Proceed with installation of Ubuntu.
 
-__NB!__ When configuring disk partitions, do __NOT__ enable the disk encryption (LUKS; it might be enabled by default), because you will not be able to mount it later.
+__NB!__ When configuring disk partitions, do __NOT__ enable the disk encryption (the `Set up this disk as LVM group` option), because you will not be able to mount it later.
+Also this tutorial implies using default settings for disk partitioning, so I would recommend to use the default settings apart from notice about encryption above.
 
 When installer requests to reboot the system, you can just close the window with VM.
 
@@ -253,7 +295,7 @@ qemu-system-x86_64 \
     -m 2048 \
     -cpu host \
     -smp 2 \
-    -drive file=!guest_dir!/disk.qcow2,format=qcow2,if=virtio \
+    -drive file=!guest_dir!/ubuntu_hdd.qcow2,format=qcow2,if=virtio \
     -net nic \
     -net user \
     -vga std
@@ -276,7 +318,7 @@ qemu-system-x86_64 \
     -m 2048 \
     -cpu host \
     -smp 2 \
-    -drive file=!guest_dir!/disk2.qcow2,format=qcow2,if=virtio \
+    -drive file=!guest_dir!/ubuntu_hdd.qcow2,format=qcow2,if=virtio \
     -append "root=/dev/vda2 console=ttyS0 earlyprintk=vga debug initcall_debug nokaslr net.ifnames=0 biosdevname=0" \
     -initrd !initrd_dir!/rootfs.cpio.gz \
     -kernel !kernel_dir!/arch/x86_64/boot/bzImage \
@@ -297,7 +339,7 @@ qemu-system-x86_64 \
     -m 2048 \
     -cpu host \
     -smp 2 \
-    -drive file=!guest_dir!/disk2.qcow2,format=qcow2,if=virtio \
+    -drive file=!guest_dir!/ubuntu_hdd.qcow2,format=qcow2,if=virtio \
     -append "root=/dev/vda2 console=ttyS0 earlyprintk=vga debug initcall_debug nokaslr net.ifnames=0 biosdevname=0" \
     -initrd !initrd_dir!/rootfs.cpio.gz \
     -kernel !kernel_dir!/arch/x86_64/boot/bzImage \
@@ -324,6 +366,20 @@ of `start_kernel` function. Send a `n` command a couple of times to execute few 
 ![QEMU and GDB windows](images/linux_qemu_gdb.jpg "QEMU and GDB windows")
 
 If you have approximately the same result, then congratulations, you can debug the kernel now!
+
+# P.S.
+
+Before publishing the article, I tried these commands once again in a temporary directory (I just did it in Downloads).
+This is a structure of directories which was sufficient for me to compile the whole thing:
+```bash
+$ tree -L1
+.
+├── 00_linux_kernel
+├── 01_busybox
+├── 02_initrd
+└── 03_ubuntu
+
+```
 
 # Kudos
 - https://www.youtube.com/@johannes4gnu_linux96 for this [video about compilation of Kernel, Busybox and building the rootfs](https://www.youtube.com/watch?v=LyWlpuntdU4)
