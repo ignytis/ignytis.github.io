@@ -23,6 +23,26 @@ Commands need to be typed in Normal Mode. To enterthe Normal Mode, press `ESC`
 
 # Key bindings
 
+## Buffers
+
+Buffers store contents of files. When you open a new file, the buffer with previous file goes to background. But you can open the previous buffer again.
+
+### Select buffer
+
+1. Press `space`
+1. Press `b`
+
+Here you can pick a previously opened file.
+
+## Files
+
+### Open a file
+
+1. Press `space`
+1. Press `f`
+
+This will open file picker where you can select a file to open
+
 ## Navigation
 
 ### General
@@ -43,6 +63,12 @@ Commands need to be typed in Normal Mode. To enterthe Normal Mode, press `ESC`
 1. Press `g`
 1. Type the line number
 1. Press `g`
+
+## Selection
+
+__Select current line:__ `x`
+
+__Select the whold document:__ `%`
 
 ## Copy, paste
 
@@ -69,5 +95,25 @@ Unlike in some other editors, the Search and Replace operation in Helix is a cha
 
 ### Delete a line
 
-1. Press `x`
+1. Press `x` to select the current line
 1. Press `d`
+
+## Splits
+
+You can split the editor window horizontally and vertically
+
+### Open a document in new split
+
+__Horizontal:__ `%hsplit FILENAME`. The editor will suggest you file names from current directory
+
+__Vertical:__ `%vsplit FILENAME`
+
+### Close a split
+
+1. Press `<ctrl>` + `w`
+1. Press `q`
+
+### Navigation between splits
+
+1. Press `<ctrl>` + `w`
+1. Press an arrow key you want to navigate to. Alternatively, you can use Vi key bindings (`h` - left, `l`- right, `j` - down, `k` - up)
