@@ -55,3 +55,96 @@ a:
   d: 2
 top: bar
 ```
+
+## Bonus tracks: key-based merging
+
+### Insert items by key
+
+```yaml
+# 1.yaml
+
+- name: alpha
+  value1: aaa1
+  value2: bbb1
+- name: bravo
+  value1: aaa2
+  value2: bbb2
+```
+
+```yaml
+# 2.yaml
+
+name: myconfig
+value: bravo
+---
+name: myconfig2
+value: notexist
+```
+
+Result:
+
+```bash
+$ yq eval-all '(select(fileIndex == 0)) as $list |
+    (select(fileIndex == 1)) as $cfg |
+    (($list[] | select(.name == $cfg.value) | del(.name)) // {}) as $match |
+    $cfg |
+    .value = $match' 1.yaml 2.yaml
+
+name: myconfig
+value:
+  value1: aaa2
+  value2: bbb2
+---
+name: myconfig2
+value: {}
+```
+
+### Merge items by key
+
+```yaml
+# 1.yaml
+
+- name: alpha
+  value1: aaa1
+  value2: bbb1
+- name: bravo
+  value1: aaa2
+  value2: bbb2
+```
+
+```yaml
+# 2.yaml
+
+name: myconfig0
+value:
+  rel_id: alpha
+  value1: override
+---
+name: myconfig
+value:
+  rel_id: bravo
+  value3: ccc3
+```
+
+Result:
+
+```bash
+$ yq eval-all '
+    (select(fileIndex == 0)) as $list |
+    (select(fileIndex == 1)) as $cfg |
+    ($list[] | select(.name == $cfg.value.rel_id) | del(.name)) as $match |
+    $cfg |
+    .value = ( ($match // {}) * ( (.value // {}) | del(.rel_id) ) )
+    ' 1.yaml 2.yaml 
+
+name: myconfig0
+value:
+  value1: override
+  value2: bbb1
+---
+name: myconfig
+value:
+  value1: aaa2
+  value2: bbb2
+  value3: ccc3
+```
